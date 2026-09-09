@@ -59,12 +59,15 @@ jobs:
           import 'package:connectivity_plus/connectivity_plus.dart';
 
           void main() {
-            WidgetsFlutterBinding.ensureInitialized();
-            SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness: Brightness.light,
-            ));
-            runApp(const MyApp());
+          WidgetsFlutterBinding.ensureInitialized();
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.light,
+          ));
+          runApp(const MyApp());
           }
 
           class MyApp extends StatelessWidget {
@@ -304,7 +307,7 @@ jobs:
                                       child: ClipOval(
                                         child: Image.asset(
                                           'assets/icon/icon.png',
-                                          fit: BoxFit.contain,
+                                          fit: BoxFit.cover,
                                         ),
                                       ),
                                     ),
@@ -476,6 +479,23 @@ jobs:
           sed -i '/<manifest xmlns:android/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
           sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" $MANIFEST
 
+      - name: Fix Native Splash Background
+        run: |
+          STYLES="myapp/android/app/src/main/res/values/styles.xml"
+          STYLES_NIGHT="myapp/android/app/src/main/res/values-night/styles.xml"
+          LAUNCH_BG="myapp/android/app/src/main/res/drawable/launch_background.xml"
+          LAUNCH_BG_V21="myapp/android/app/src/main/res/drawable-v21/launch_background.xml"
+
+          cat > $LAUNCH_BG << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="@android:color/black" />
+          </layer-list>
+          EOF
+
+          if [ -f "$LAUNCH_BG_V21" ]; then cp $LAUNCH_BG $LAUNCH_BG_V21; fi
+          if [ -f "$STYLES_NIGHT" ]; then cp $LAUNCH_BG $STYLES_NIGHT 2>/dev/null || true; fi
+
       - name: Download Icon
         run: |
           mkdir -p myapp/assets/icon
@@ -485,7 +505,7 @@ jobs:
             -H "Accept: application/octet-stream" \
             "${{ github.event.inputs.icon_url }}" \
             -o myapp/assets/icon/icon_raw
-          convert myapp/assets/icon/icon_raw -resize 1024x1024 myapp/assets/icon/icon.png
+          convert myapp/assets/icon/icon_raw -resize 1024x1024 -gravity center -background white -extent 1024x1024 myapp/assets/icon/icon.png
 
       - name: Generate Icons
         run: |
