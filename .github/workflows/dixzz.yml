@@ -1,0 +1,508 @@
+name: Web2APK dixzz version
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_url:
+        description: 'URL Website'
+        required: true
+      app_name:
+        description: 'Nama Aplikasi'
+        required: true
+      icon_url:
+        description: 'Icon Url'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+
+      - name: Create Flutter Project
+        run: |
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          PKG=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd '[:alnum:]_')
+          flutter create --org com.webapk --project-name "$PKG" myapp
+
+      - name: Add Assets and Dependencies
+        run: |
+          cd myapp
+          flutter pub add webview_flutter
+          flutter pub add flutter_launcher_icons
+          flutter pub add connectivity_plus
+          echo "  assets:" >> pubspec.yaml
+          echo "    - assets/icon/" >> pubspec.yaml
+
+      - name: Write main.dart
+        run: |
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          WEB_URL="${{ github.event.inputs.web_url }}"
+
+          cat > myapp/lib/main.dart << 'DART'
+          import 'dart:async';
+          import 'dart:math';
+          import 'package:flutter/material.dart';
+          import 'package:flutter/services.dart';
+          import 'package:webview_flutter/webview_flutter.dart';
+          import 'package:connectivity_plus/connectivity_plus.dart';
+
+          void main() {
+            WidgetsFlutterBinding.ensureInitialized();
+            SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: Brightness.light,
+            ));
+            runApp(const MyApp());
+          }
+
+          class MyApp extends StatelessWidget {
+            const MyApp({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: '$APP_NAME',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
+                home: const SplashScreen(),
+              );
+            }
+          }
+
+          class SplashScreen extends StatefulWidget {
+            const SplashScreen({super.key});
+            @override
+            State<SplashScreen> createState() => _SplashScreenState();
+          }
+
+          class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+            late final AnimationController _orbit1 = AnimationController(vsync: this, duration: const Duration(seconds: 18))..repeat();
+            late final AnimationController _orbit2 = AnimationController(vsync: this, duration: const Duration(seconds: 26))..repeat();
+            late final AnimationController _orbit3 = AnimationController(vsync: this, duration: const Duration(seconds: 34))..repeat();
+            late final AnimationController _orbit4 = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+
+            late final AnimationController _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 2500))..repeat(reverse: true);
+            late final AnimationController _borderRotate = AnimationController(vsync: this, duration: const Duration(seconds: 4))..repeat();
+            late final AnimationController _gradientController = AnimationController(vsync: this, duration: const Duration(milliseconds: 5000))..repeat(reverse: true);
+            late final AnimationController _loaderController = AnimationController(vsync: this, duration: const Duration(milliseconds: 2500));
+
+            final List<_ParticleData> _particles = [];
+            bool _isChecking = false;
+            bool _dialogShown = false;
+            bool _navigated = false;
+
+            @override
+            void initState() {
+              super.initState();
+              final rnd = Random();
+              for (int i = 0; i < 6; i++) {
+                _particles.add(_ParticleData(
+                  controller: AnimationController(
+                    vsync: this,
+                    duration: Duration(seconds: 18 + rnd.nextInt(12)),
+                  )..repeat(),
+                  dx: rnd.nextDouble(),
+                  size: 4.0 + rnd.nextDouble() * 6,
+                  delay: rnd.nextDouble(),
+                ));
+              }
+
+              _loaderController.forward();
+              _loaderController.addStatusListener((status) {
+                if (status == AnimationStatus.completed && !_navigated) {
+                  _navigated = true;
+                  Future.delayed(const Duration(milliseconds: 400), _checkConnectionAndNavigate);
+                }
+              });
+            }
+
+            Future<void> _checkConnectionAndNavigate() async {
+              if (_isChecking) return;
+              setState(() => _isChecking = true);
+              var connectivityResult = await (Connectivity().checkConnectivity());
+              if (connectivityResult.every((r) => r == ConnectivityResult.none)) {
+                setState(() => _isChecking = false);
+                _showNoConnectionDialog();
+              } else {
+                if (mounted) {
+                  Navigator.pushReplacement(
+                    context,
+                    PageRouteBuilder(
+                      transitionDuration: const Duration(milliseconds: 800),
+                      pageBuilder: (_, anim, __) => FadeTransition(opacity: anim, child: const WebViewPage()),
+                    ),
+                  );
+                }
+              }
+            }
+
+            void _showNoConnectionDialog() {
+              if (!mounted || _dialogShown) return;
+              setState(() => _dialogShown = true);
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => AlertDialog(
+                  title: const Text('Gagal Terhubung'),
+                  content: const Text('Tidak ada koneksi internet.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        setState(() => _dialogShown = false);
+                        _navigated = false;
+                        _loaderController
+                          ..reset()
+                          ..forward();
+                      },
+                      child: const Text('Coba Lagi'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            @override
+            void dispose() {
+              _orbit1.dispose();
+              _orbit2.dispose();
+              _orbit3.dispose();
+              _orbit4.dispose();
+              _pulseController.dispose();
+              _borderRotate.dispose();
+              _gradientController.dispose();
+              _loaderController.dispose();
+              for (final p in _particles) {
+                p.controller.dispose();
+              }
+              super.dispose();
+            }
+
+            Widget _orbitRing(AnimationController controller, double size, Color color, {bool reverse = false}) {
+              return AnimatedBuilder(
+                animation: controller,
+                builder: (context, child) {
+                  final angle = reverse ? -controller.value * 2 * pi : controller.value * 2 * pi;
+                  return Transform.rotate(angle: angle, child: child);
+                },
+                child: Container(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 1.5),
+                  ),
+                ),
+              );
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final size = MediaQuery.of(context).size;
+              return Scaffold(
+                body: Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF0F0C29), Color(0xFF302B63), Color(0xFF24243E)],
+                    ),
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ..._particles.map((p) {
+                        return AnimatedBuilder(
+                          animation: p.controller,
+                          builder: (context, child) {
+                            final t = (p.controller.value + p.delay) % 1.0;
+                            final top = size.height * (1 - t * 1.3);
+                            final opacity = (t < 0.15) ? t / 0.15 : (t > 0.85 ? (1 - t) / 0.15 : 1.0);
+                            return Positioned(
+                              left: size.width * p.dx,
+                              top: top,
+                              child: Opacity(
+                                opacity: opacity.clamp(0.0, 0.6),
+                                child: Container(
+                                  width: p.size,
+                                  height: p.size,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Color(0x1AFFFFFF),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }),
+
+                      _orbitRing(_orbit1, 320, const Color(0x266366F1)),
+                      _orbitRing(_orbit2, 420, const Color(0x1FA855F7), reverse: true),
+                      _orbitRing(_orbit3, 520, const Color(0x1AEC4899)),
+                      _orbitRing(_orbit4, 220, const Color(0x26FBBF24), reverse: true),
+
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedBuilder(
+                            animation: Listenable.merge([_pulseController, _borderRotate]),
+                            builder: (context, child) {
+                              final scale = 1.0 + _pulseController.value * 0.06;
+                              return Transform.scale(
+                                scale: scale,
+                                child: Container(
+                                  width: 138,
+                                  height: 138,
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: SweepGradient(
+                                      transform: GradientRotation(_borderRotate.value * 2 * pi),
+                                      colors: const [
+                                        Colors.transparent,
+                                        Color(0xFF6366F1),
+                                        Colors.transparent,
+                                        Color(0xFFD946EF),
+                                        Colors.transparent,
+                                        Color(0xFFF59E0B),
+                                        Colors.transparent,
+                                      ],
+                                    ),
+                                  ),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFD946EF)],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF6366F1).withOpacity(0.35 + _pulseController.value * 0.2),
+                                          blurRadius: 80 + _pulseController.value * 40,
+                                          spreadRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(28),
+                                      child: ClipOval(
+                                        child: Image.asset(
+                                          'assets/icon/icon.png',
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 30),
+
+                          AnimatedBuilder(
+                            animation: _gradientController,
+                            builder: (context, child) {
+                              final shift = _gradientController.value;
+                              return ShaderMask(
+                                shaderCallback: (bounds) => LinearGradient(
+                                  begin: Alignment(-1.0 + shift * 2, 0),
+                                  end: Alignment(1.0 + shift * 2, 0),
+                                  colors: const [
+                                    Color(0xFFF9D976),
+                                    Color(0xFFF39F86),
+                                    Color(0xFFDF5B9B),
+                                    Color(0xFF6366F1),
+                                  ],
+                                ).createShader(bounds),
+                                child: Text(
+                                  '$APP_NAME'.toUpperCase(),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 3,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.circle, size: 8, color: Colors.white.withOpacity(0.2)),
+                              const SizedBox(width: 8),
+                              Text(
+                                'SEDANG MEMUAT',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 13,
+                                  letterSpacing: 4,
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Icon(Icons.circle, size: 8, color: Colors.white.withOpacity(0.2)),
+                            ],
+                          ),
+                          const SizedBox(height: 40),
+
+                          AnimatedBuilder(
+                            animation: _loaderController,
+                            builder: (context, child) {
+                              final progress = Curves.easeInOut.transform(_loaderController.value);
+                              return Column(
+                                children: [
+                                  Container(
+                                    width: 240,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.06),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: FractionallySizedBox(
+                                        widthFactor: progress,
+                                        child: Container(
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(4),
+                                            gradient: const LinearGradient(
+                                              colors: [
+                                                Color(0xFF6366F1),
+                                                Color(0xFF8B5CF6),
+                                                Color(0xFFD946EF),
+                                                Color(0xFFF59E0B),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                          valueColor: AlwaysStoppedAnimation(Colors.white.withOpacity(0.15)),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        '${(progress * 100).floor()}%',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.25),
+                                          fontSize: 13,
+                                          letterSpacing: 3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          class _ParticleData {
+            final AnimationController controller;
+            final double dx;
+            final double size;
+            final double delay;
+            _ParticleData({required this.controller, required this.dx, required this.size, required this.delay});
+          }
+
+          class WebViewPage extends StatefulWidget {
+            const WebViewPage({super.key});
+            @override
+            State<WebViewPage> createState() => _WebViewPageState();
+          }
+
+          class _WebViewPageState extends State<WebViewPage> {
+            late final WebViewController _controller;
+            @override
+            void initState() {
+              super.initState();
+              _controller = WebViewController()
+                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                ..loadRequest(Uri.parse('$WEB_URL'));
+            }
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(body: SafeArea(child: WebViewWidget(controller: _controller)));
+            }
+          }
+          DART
+
+          sed -i "s#\$APP_NAME#$APP_NAME#g" myapp/lib/main.dart
+          sed -i "s#\$WEB_URL#$WEB_URL#g" myapp/lib/main.dart
+
+      - name: Fix Android Permissions
+        run: |
+          APP_NAME="${{ github.event.inputs.app_name }}"
+          MANIFEST="myapp/android/app/src/main/AndroidManifest.xml"
+          sed -i '/<manifest xmlns:android/a\    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
+          sed -i '/<manifest xmlns:android/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
+          sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" $MANIFEST
+
+      - name: Download Icon
+        run: |
+          mkdir -p myapp/assets/icon
+          sudo apt-get install -y imagemagick
+          curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            "${{ github.event.inputs.icon_url }}" \
+            -o myapp/assets/icon/icon_raw
+          convert myapp/assets/icon/icon_raw -resize 1024x1024 myapp/assets/icon/icon.png
+
+      - name: Generate Icons
+        run: |
+          cat > myapp/flutter_launcher_icons.yaml << 'EOF'
+          flutter_launcher_icons:
+            android: true
+            ios: false
+            image_path: "assets/icon/icon.png"
+            min_sdk_android: 21
+          EOF
+          cd myapp && dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+
+      - name: Build APK
+        run: cd myapp && flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: web2apk-release
+          path: myapp/build/app/outputs/flutter-apk/app-release.apk
