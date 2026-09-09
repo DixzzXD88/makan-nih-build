@@ -481,8 +481,6 @@ jobs:
 
       - name: Fix Native Splash Background
         run: |
-          STYLES="myapp/android/app/src/main/res/values/styles.xml"
-          STYLES_NIGHT="myapp/android/app/src/main/res/values-night/styles.xml"
           LAUNCH_BG="myapp/android/app/src/main/res/drawable/launch_background.xml"
           LAUNCH_BG_V21="myapp/android/app/src/main/res/drawable-v21/launch_background.xml"
 
@@ -494,7 +492,6 @@ jobs:
           EOF
 
           if [ -f "$LAUNCH_BG_V21" ]; then cp $LAUNCH_BG $LAUNCH_BG_V21; fi
-          if [ -f "$STYLES_NIGHT" ]; then cp $LAUNCH_BG $STYLES_NIGHT 2>/dev/null || true; fi
 
       - name: Download Icon
         run: |
