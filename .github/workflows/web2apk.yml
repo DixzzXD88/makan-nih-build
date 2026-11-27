@@ -1,235 +1,112 @@
-name: Web2APK
-
+name: Web to APK
 on:
   workflow_dispatch:
     inputs:
       web_url:
-        description: 'URL Website'
+        description: Website URL
         required: true
       app_name:
-        description: 'Nama Aplikasi'
+        description: Application name
         required: true
       icon_url:
-        description: 'Icon Url'
-        required: true
-
+        description: Icon URL
+        required: false
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
           channel: stable
-          cache: true
-
-      - name: Create Flutter Project
+      - name: Create project
         run: |
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          PKG=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd '[:alnum:]_')
-          flutter create --org com.webapk --project-name "$PKG" myapp
-
-      - name: Add Assets and Dependencies
-        run: |
-          cd myapp
+          flutter create --org com.dixzzxd --project-name webtoapk webapp
+          cd webapp
           flutter pub add webview_flutter
-          flutter pub add flutter_launcher_icons
-          flutter pub add connectivity_plus
-          echo "  assets:" >> pubspec.yaml
-          echo "    - assets/icon/" >> pubspec.yaml
-
-      - name: Write main.dart
+          mkdir -p assets
+          if [ -n "${{ inputs.icon_url }}" ]; then
+            curl -L -o assets/app_icon.png "${{ inputs.icon_url }}" || rm -f assets/app_icon.png
+          fi
+      - name: Configure app
+        working-directory: webapp
+        env:
+          WEB_URL: "${{ inputs.web_url }}"
+          APP_NAME: "${{ inputs.app_name }}"
         run: |
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          WEB_URL="${{ github.event.inputs.web_url }}"
-
-          cat > myapp/lib/main.dart << 'DART'
+          cat > lib/main.dart <<'DART'
           import 'package:flutter/material.dart';
-          import 'package:flutter/services.dart';
           import 'package:webview_flutter/webview_flutter.dart';
-          import 'package:connectivity_plus/connectivity_plus.dart';
-          import 'dart:async';
-
           void main() {
-            WidgetsFlutterBinding.ensureInitialized();
-            SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness: Brightness.dark,
-            ));
-            runApp(const MyApp());
+            runApp(const BuilderApp());
           }
-
-          class MyApp extends StatelessWidget {
-            const MyApp({super.key});
+          class BuilderApp extends StatelessWidget {
+            const BuilderApp({super.key});
             @override
             Widget build(BuildContext context) {
-              return MaterialApp(
-                title: '$APP_NAME',
+              return const MaterialApp(
                 debugShowCheckedModeBanner: false,
-                theme: ThemeData(useMaterial3: true, primarySwatch: Colors.blue),
-                home: const SplashScreen(),
+                home: WebScreen(),
               );
             }
           }
-
-          class SplashScreen extends StatefulWidget {
-            const SplashScreen({super.key});
+          class WebScreen extends StatefulWidget {
+            const WebScreen({super.key});
             @override
-            State<SplashScreen> createState() => _SplashScreenState();
+            State<WebScreen> createState() => _WebScreenState();
           }
-
-          class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
-            late AnimationController _fadeController;
-            late AnimationController _scaleController;
-            late AnimationController _dotController;
-            late Animation<double> _fadeAnim;
-            late Animation<double> _scaleAnim;
-            late Animation<double> _dot1Anim;
-            late Animation<double> _dot2Anim;
-            late Animation<double> _dot3Anim;
-            bool _isChecking = false;
-            bool _dialogShown = false;
-
+          class _WebScreenState extends State<WebScreen> {
+            late final WebViewController controller;
             @override
             void initState() {
               super.initState();
-              _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-              _scaleController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
-              _dotController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat();
-
-              _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
-              _scaleAnim = Tween<double>(begin: 0.75, end: 1.0).animate(CurvedAnimation(parent: _scaleController, curve: Curves.easeOutBack));
-
-              _dot1Anim = TweenSequence([
-                TweenSequenceItem(tween: Tween<double>(begin: 0.3, end: 1.0), weight: 1),
-                TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.3), weight: 1),
-                TweenSequenceItem(tween: ConstantTween<double>(0.3), weight: 1),
-              ]).animate(CurvedAnimation(parent: _dotController, curve: Curves.easeInOut));
-
-              _dot2Anim = TweenSequence([
-                TweenSequenceItem(tween: ConstantTween<double>(0.3), weight: 1),
-                TweenSequenceItem(tween: Tween<double>(begin: 0.3, end: 1.0), weight: 1),
-                TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.3), weight: 1),
-              ]).animate(CurvedAnimation(parent: _dotController, curve: Curves.easeInOut));
-
-              _dot3Anim = TweenSequence([
-                TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 0.3), weight: 1),
-                TweenSequenceItem(tween: ConstantTween<double>(0.3), weight: 1),
-                TweenSequenceItem(tween: Tween<double>(begin: 0.3, end: 1.0), weight: 1),
-              ]).animate(CurvedAnimation(parent: _dotController, curve: Curves.easeInOut));
-
-              _fadeController.forward();
-              _scaleController.forward();
-              Timer(const Duration(milliseconds: 1500), () => _checkConnectionAndNavigate());
-            }
-
-            Future<void> _checkConnectionAndNavigate() async {
-              if (_isChecking) return;
-              setState(() => _isChecking = true);
-              await Future.delayed(const Duration(milliseconds: 1000));
-              var connectivityResult = await (Connectivity().checkConnectivity());
-              if (connectivityResult.every((r) => r == ConnectivityResult.none)) {
-                setState(() => _isChecking = false);
-                _showNoConnectionDialog();
-              } else {
-                if (mounted) {
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const WebViewPage()));
-                }
-              }
-            }
-
-            void _showNoConnectionDialog() {
-              if (!mounted || _dialogShown) return;
-              setState(() => _dialogShown = true);
-              showDialog(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) => AlertDialog(
-                  title: const Text('Gagal Terhubung'),
-                  content: const Text('Tidak ada koneksi internet.'),
-                  actions: [
-                    TextButton(onPressed: () { Navigator.pop(context); setState(() => _dialogShown = false); _checkConnectionAndNavigate(); }, child: const Text('Coba Lagi'))
-                  ],
-                ),
-              );
-            }
-
-            @override
-            void dispose() { _fadeController.dispose(); _scaleController.dispose(); _dotController.dispose(); super.dispose(); }
-
-            @override
-            Widget build(BuildContext context) {
-              return Scaffold(body: Center(child: Text('$APP_NAME', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold))));
-            }
-          }
-
-          class WebViewPage extends StatefulWidget {
-            const WebViewPage({super.key});
-            @override
-            State<WebViewPage> createState() => _WebViewPageState();
-          }
-
-          class _WebViewPageState extends State<WebViewPage> {
-            late final WebViewController _controller;
-            @override
-            void initState() {
-              super.initState();
-              _controller = WebViewController()
+              controller = WebViewController()
                 ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                ..loadRequest(Uri.parse('$WEB_URL'));
+                ..loadRequest(Uri.parse('WEB_URL_PLACEHOLDER'));
             }
             @override
             Widget build(BuildContext context) {
-              return Scaffold(body: SafeArea(child: WebViewWidget(controller: _controller)));
+              return Scaffold(body: WebViewWidget(controller: controller));
             }
           }
           DART
-
-          sed -i "s#\$APP_NAME#$APP_NAME#g" myapp/lib/main.dart
-          sed -i "s#\$WEB_URL#$WEB_URL#g" myapp/lib/main.dart
-
-      - name: Fix Android Permissions
-        run: |
-          APP_NAME="${{ github.event.inputs.app_name }}"
-          MANIFEST="myapp/android/app/src/main/AndroidManifest.xml"
-          sed -i '/<manifest xmlns:android/a\    <uses-permission android:name="android.permission.INTERNET"\/>' $MANIFEST
-          sed -i '/<manifest xmlns:android/a\    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"\/>' $MANIFEST
-          sed -i "s/android:label=\"[^\"]*\"/android:label=\"$APP_NAME\"/" $MANIFEST
-
-      - name: Download Icon
-        run: |
-          mkdir -p myapp/assets/icon
-          sudo apt-get install -y imagemagick
-          curl -L \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/octet-stream" \
-            "${{ github.event.inputs.icon_url }}" \
-            -o myapp/assets/icon/icon_raw
-          convert myapp/assets/icon/icon_raw -resize 1024x1024 myapp/assets/icon/icon.png
-
-      - name: Generate Icons
-        run: |
-          cat > myapp/flutter_launcher_icons.yaml << 'EOF'
+          python3 - <<'PY'
+          import os
+          import pathlib
+          page = pathlib.Path('lib/main.dart')
+          page.write_text(page.read_text().replace('WEB_URL_PLACEHOLDER', os.environ['WEB_URL']))
+          manifest = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text().replace('android:label="webapp"', 'android:label="' + os.environ['APP_NAME'] + '"')
+          lines = text.splitlines()
+          if not any('INTERNET' in line for line in lines):
+              lines.insert(1, '    <uses-permission android:name="android.permission.INTERNET" />')
+          sep = chr(10)
+          manifest.write_text(sep.join(lines) + sep)
+          PY
+          if [ -f assets/app_icon.png ]; then
+            flutter pub add --dev flutter_launcher_icons
+            cat >> pubspec.yaml <<'YAML'
           flutter_launcher_icons:
             android: true
             ios: false
-            image_path: "assets/icon/icon.png"
-            min_sdk_android: 21
-          EOF
-          cd myapp && dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
-
-      - name: Build APK
-        run: cd myapp && flutter build apk --release
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+            image_path: assets/app_icon.png
+            adaptive_icon_background: white
+            adaptive_icon_foreground: assets/app_icon.png
+          YAML
+            dart run flutter_launcher_icons
+          fi
+      - name: Build
+        working-directory: webapp
+        run: |
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/app-release.apk"
+      - uses: actions/upload-artifact@v4
         with:
-          name: web2apk-release
-          path: myapp/build/app/outputs/flutter-apk/app-release.apk
+          name: apk
+          path: app-release.apk
+          if-no-files-found: error
