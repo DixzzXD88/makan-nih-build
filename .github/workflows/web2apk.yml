@@ -30,7 +30,8 @@ jobs:
           flutter pub add webview_flutter
           mkdir -p assets
           if [ -n "${{ inputs.icon_url }}" ]; then
-            curl -L -o assets/app_icon.png "${{ inputs.icon_url }}" || rm -f assets/app_icon.png
+            curl -L -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/octet-stream" -o assets/app_icon.png "${{ inputs.icon_url }}" || rm -f assets/app_icon.png
+            if command -v convert >/dev/null 2>&1 && [ -f assets/app_icon.png ]; then convert assets/app_icon.png -resize 1024x1024 assets/app_icon.png; fi
           fi
       - name: Configure app
         working-directory: webapp
